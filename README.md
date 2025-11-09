@@ -25,8 +25,8 @@ SEA Model series Op.0: Saint Iberisは元のnanoGPTと比較して学習時間�
 
 # 🌸 SLC2 Formulation
 
-```markdown
-y = B ⋅ ∏ᵢ₌ⱼ⁽ʲ⁺ᵏ⁾ Aᵢ ⋅ xᵢ
+```math
+y = B \odot \Pi_{i=j}^{j+k} A_i \cdot x_i
 ```
 
 # 🌸 SLC2 pseudo code
@@ -268,7 +268,7 @@ Japanese independent researcher having shy and pampered personality. Twin-tail h
 
 <img width="4405" height="2480" alt="RikkaBotan_Logo" src="https://github.com/user-attachments/assets/3e0819a9-b7ab-4966-8089-cd5b67a15871" />
 
-## 🌸 Cite
+# 🌸 Cite
 
 ```bibtex
 @misc{nanochat,
@@ -280,6 +280,6 @@ Japanese independent researcher having shy and pampered personality. Twin-tail h
 }
 ```
 
-## License
+# 🌸 License
 
 MIT
