@@ -103,7 +103,7 @@ And then visit the URL shown. Make sure to access it correctly, e.g. on Lambda u
 
 | Metric                |   GPT([karpathy/nanochat](https://github.com/karpathy/nanochat))|   Saint Iberis                                  |
 |-----------------------|------------------------------------------------------------     |-----------------------------------------------  |
-| Total wall clock time |   3h51m                                                         |   3h15m                                         |
+| Total wall clock time |   3h51m                                                         |   **3h15m**                                     |
 | ARC-Challenge         |   **0.2807**                                                    |   0.2782                                        |
 | ARC-Easy              |   **0.3876**                                                    |   0.3864                                        |
 | HumanEval             |   **0.0854**                                                    |   0.0549                                        |
