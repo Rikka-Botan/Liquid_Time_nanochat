@@ -82,6 +82,10 @@ And then visit the URL shown. Make sure to access it correctly, e.g. on Lambda u
 
 ---
 
+# 🌸 Weight is now available
+
+[RikkaBotan/nanochat_d20_saint_iberis](https://huggingface.co/RikkaBotan/nanochat_d20_saint_iberis)
+
 # 🌸 Performance
 
 | Metric          |   BASE     |   MID      |   SFT      |   RL       |
