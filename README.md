@@ -1,21 +1,65 @@
-# nanochat
+# 🌸 Liquid-Time-nanochat
 
-![nanochat logo](dev/nanochat.png)
+![Nanochat_saint_iberis](https://github.com/user-attachments/assets/2af52f08-6b04-41ff-8e74-1144e2ec7e9a)
 
-> The best ChatGPT that $100 can buy.
+This repository employs a module called **SLC2**, inspired by **Liquid Time-Constant Networks (LTCs)** and **Liquid Functional Models (LFM2)**, to enable faster training and inference for **nanochat**.
+The **SEA Model series Op.0: Saint Iberis** achieves comparable performance while reducing training time by more than **30 minutes** and lowering computational costs by over **$10**.
+You are free to use the model from this repository
 
-This repo is a full-stack implementation of an LLM like ChatGPT in a single, clean, minimal, hackable, dependency-lite codebase. nanochat is designed to run on a single 8XH100 node via scripts like [speedrun.sh](speedrun.sh), that run the entire pipeline start to end. This includes tokenization, pretraining, finetuning, evaluation, inference, and web serving over a simple UI so that you can talk to your own LLM just like ChatGPT. nanochat will become the capstone project of the course LLM101n being developed by Eureka Labs.
+このリポジトリはnanochatをより高速に学習・推論するために、LTCsおよびLFM2から着想を得たSLC2というモジュールを使用しています。
+SEA Model series Op.0: Saint Iberisは元のnanoGPTと比較して学習時間を30分以上、$10以上のコストを削減しながら、同等の性能を達成することが可能です。
+モデルはこのリポジトリからご自由に利用できます。
 
-## Talk to it
+# 🌸 Saint Iberis Architecture
 
-To get a sense of the endpoint of this repo, you can currently find [nanochat d32](https://github.com/karpathy/nanochat/discussions/8) hosted on [nanochat.karpathy.ai](https://nanochat.karpathy.ai/). "d32" means that this model has 32 layers in the Transformer neural network. This model has 1.9 billion parameters, it was trained on 38 billion tokens by simply running the single script [run1000.sh](run1000.sh), and the total cost of training was ~$800 (about 33 hours training time on 8XH100 GPU node). While today this is enough to outperform GPT-2 of 2019, it falls dramatically short of modern Large Language Models like GPT-5. When talking to these micro models, you'll see that they make a lot of mistakes, they are a little bit naive and silly and they hallucinate a ton, a bit like children. It's kind of amusing. But what makes nanochat unique is that it is fully yours - fully configurable, tweakable, hackable, and trained by you from start to end. To train and talk to your own, we turn to...
+<img width="4400" height="1595" alt="Saint_Iberis" src="https://github.com/user-attachments/assets/08315549-988f-48ad-b58b-a068e1f851dd" />
+
+
+| Property              | Saint Iberis d20              | Remarks                                               |
+| --------------------- | ----------------------------- |------------------------------------------------------ |
+| **Total parameters**  | 542,035,200 (542M)            | n_layer: 20, n_head: 10, n_kv_head: 10, n_embd: 1280  |
+| **Layers**            | 20 (13 slc2 + 7 attn)         | attn layers: 1, 4, 7, 10, 13, 16, 19                  |
+| **Vocabulary size**   | 65,536                        | -                                                     |
+| **Training budget**   | 100B tokens                   | Fineweb edu                                           |
+| **License**           | MIT                           | -                                                    |
+
+# 🌸 SLC2 Formulation
+
+```markdown
+y = B ⋅ ∏ᵢ₌ⱼ⁽ʲ⁺ᵏ⁾ Aᵢ ⋅ xᵢ
+```
+
+# 🌸 SLC2 pseudo code
+
+```python
+----------------------------------------
+Algorithm: SLC2
+----------------------------------------
+Input: x: (B, S, E)
+Output: y: (B, S, E)
+    1: alpha, A, B, x₁ <- Linear(x)
+    2: x₂: (B, S, E) <- Convolution1D(E, E)(SiLU(alpha)*A*x₁)
+    3: x₃: (B, S, E) <- B*SiLU(x₂)
+    4: y: (B, S, E) <- Linear(x₃)
+    5: return y
+----------------------------------------
+```
 
 ## Quick start
 
-The fastest way to feel the magic is to run the speedrun script [speedrun.sh](speedrun.sh), which trains and inferences the $100 tier of nanochat. On an 8XH100 node at $24/hr, this gives a total run time of about 4 hours. Boot up a new 8XH100 GPU box from your favorite provider (e.g. I use and like [Lambda](https://lambda.ai/service/gpu-cloud)), and kick off the training script:
+The fastest way to feel the magic is to run the speedrun script [speedrun.sh](speedrun.sh), which trains and inferences the $100 tier of nanochat. On an 8XH100 node at $24/hr, this gives a total run time of about 3.5 hours. Boot up a new 8XH100 GPU box from your favorite provider (e.g. I use and like [Lambda](https://lambda.ai/service/gpu-cloud)), and kick off the training script:
 
+Fisrt, install this repository
 ```bash
-bash speedrun.sh
+pip install git+https://github.com/Rikka-Botan/Liquid_Time_nanochat.git
+```
+
+Then, run trainings.
+```bash
+%cd
+%cd nanochat
+%pwd
+!bash speedrun.sh
 ```
 
 Alternatively, since the script runs for 4 hours, I like to launch it like this inside a new screen session `speedrun` (and also log output to `speedrun.log`):
@@ -38,33 +82,45 @@ And then visit the URL shown. Make sure to access it correctly, e.g. on Lambda u
 
 ---
 
-You can also `cat report.md` file which appeared in the project directory and contains the "report card" of the run, i.e. a bunch of evaluations and metrics. At the very end, you'll see a summary table, for example:
+# 🌸 Performance
 
----
+| Metric          |   BASE     |   MID      |   SFT      |   RL       |
+|-----------------|------------|------------|------------|------------|
+| CORE            |   0.1796   | -          | -          | -          |
+| ARC-Challenge   | -          |   0.2910   |   0.2782   | -          |
+| ARC-Easy        | -          |   0.3792   |   0.3864   | -          |
+| GSM8K           | -          |   0.0341   |   0.0455   | -          |
+| HumanEval       | -          |   0.0732   |   0.0549   | -          |
+| MMLU            | -          |   0.3146   |   0.3166   | -          |
+| ChatCORE        | -          |   0.2348   |   0.2322   | -          |
+**Total wall clock time: 3h15m**
 
-- Characters: 333,989
-- Lines: 8,304
-- Files: 44
-- Tokens (approx): 83,497
-- Dependencies (uv.lock lines): 2,004
+# 🌸 Comparison with nanoGPT
 
-| Metric          | BASE     | MID      | SFT      | RL       |
-|-----------------|----------|----------|----------|----------|
-| CORE            | 0.2219   | -        | -        | -        |
-| ARC-Challenge   | -        | 0.2875   | 0.2807   | -        |
-| ARC-Easy        | -        | 0.3561   | 0.3876   | -        |
-| GSM8K           | -        | 0.0250   | 0.0455   | 0.0758   |
-| HumanEval       | -        | 0.0671   | 0.0854   | -        |
-| MMLU            | -        | 0.3111   | 0.3151   | -        |
-| ChatCORE        | -        | 0.0730   | 0.0884   | -        |
+| Metric                |   GPT([karpathy/nanochat](https://github.com/karpathy/nanochat))|   Saint Iberis                                  |
+|-----------------------|------------------------------------------------------------     |-----------------------------------------------  |
+| Total wall clock time |   3h51m                                                         |   3h15m                                         |
+| ARC-Challenge         |   **0.2807**                                                    |   0.2782                                        |
+| ARC-Easy              |   **0.3876**                                                    |   0.3864                                        |
+| HumanEval             |   **0.0854**                                                    |   0.0549                                        |
+| MMLU                  |   0.3151                                                        |   **0.3166**                                    |
+| ChatCORE              |   0.0844                                                        |   **0.2322**                                    |
+| Task Average          |   0.1998                                                        |   **0.2190**                                    |
 
-Total wall clock time: 3h51m
+# 🌸 Training result
 
----
+## Base Training
+- Minimum validation bpb: 0.8287
+- Final validation bpb: 0.8287
 
-(Your table might be missing the RL number by default). For a lot more information around the speedrun script and what to look for and expect, please refer to the walkthrough that I posted in Discussions of the repo: ["Introducing nanochat: The best ChatGPT that $100 can buy"](https://github.com/karpathy/nanochat/discussions/1).
+## Mid Training
+- Minimum validation bpb: 0.4116
 
-## Bigger models
+## SFT Training
+- Training loss: 0.5825
+- Validation loss: 1.0657
+
+## 🌸 Bigger models
 
 Unsurprisingly, $100 is not enough to train a highly performant ChatGPT clone. In fact, LLMs are famous for their multi-million dollar capex. For our purposes, I think there are two more scales of interest. First is the ~$300 tier d26 model (i.e. depth=26) that trains in ~12 hours, which slightly outperforms GPT-2 CORE score. Second is the $1000 tier (~41.6 hours), just because it's a nice round number. But both of these are not yet fully supported and therefore not attached here in the master branch yet.
 
@@ -194,17 +250,25 @@ nanochat is nowhere near finished. The goal is to improve the state of the art i
 
 Current LLM policy: disclosure. When submitting a PR, please declare any parts that had substantial LLM contribution and that you have not written or that you do not fully understand.
 
-## Acknowledgements
+# 🌸 Acknowledgments
 
-- The name (nanochat) derives from my earlier project [nanoGPT](https://github.com/karpathy/nanoGPT), which only covered pretraining.
-- nanochat is also inspired by [modded-nanoGPT](https://github.com/KellerJordan/modded-nanogpt), which gamified the nanoGPT repo with clear metrics and a leaderboard, and borrows a lot of its ideas and some implementation for pretraining.
-- Thank you to [HuggingFace](https://huggingface.co/) for fineweb and smoltalk.
-- Thank you [Lambda](https://lambda.ai/service/gpu-cloud) for the compute used in developing this project.
-- Thank you to chief LLM whisperer 🧙‍♂️ Alec Radford for advice/guidance.
+I thank [Andrej Karpathy's](https://huggingface.co/karpathy) fullstack llm project to build an LLM, [nanochat](https://github.com/karpathy/nanochat).
 
-## Cite
+I thank the developers of python and pytorch.
 
-If you find nanochat helpful in your research cite simply as:
+I thank all the researchers for their efforts to date.
+
+I thank Japan's high standard of education.
+
+And most of all, thank you for your interest in this repository.
+
+# 🌸 About us
+
+Japanese independent researcher having shy and pampered personality. Twin-tail hair is a charm point. Interested in nlp. Usually using python and C.
+
+<img width="4405" height="2480" alt="RikkaBotan_Logo" src="https://github.com/user-attachments/assets/3e0819a9-b7ab-4966-8089-cd5b67a15871" />
+
+## 🌸 Cite
 
 ```bibtex
 @misc{nanochat,
