@@ -1,4 +1,12 @@
 """
+coding = utf-8
+Licensed under "MIT License"
+Commercial use is of course permitted
+SEA Model Op.0: Saint Iberis PyTorch implementation
+(Saint Iberis is the early experimental model)
+
+Saint Iberis = SLC2 + GPT
+
 GPT model (rewrite, a lot simpler)
 Notable features:
 - rotary embeddings (and no positional embeddings)
@@ -19,19 +27,24 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from typing import Any, Optional
+from einops import rearrange
+
 from nanochat.common import get_dist_info, print0
 from nanochat.muon import Muon, DistMuon
 from nanochat.adamw import DistAdamW
+
 
 @dataclass
 class GPTConfig:
     sequence_len: int = 1024
     vocab_size: int = 50304
-    n_layer: int = 12
+    n_layer: int = 16
     n_head: int = 6 # number of query heads
     n_kv_head: int = 6 # number of key/value heads (MQA)
     n_embd: int = 768
-
+    n_kernel: int = 3
+    slc_rate: int = 3
 
 def norm(x):
     # Purely functional rmsnorm with no learnable params
@@ -110,27 +123,234 @@ class CausalSelfAttention(nn.Module):
         return y
 
 
+# Inference Cache class for SLC2
+class SLCInferenceCache:
+    __slots__ = ("conv_state", "index", "kernel_size")
+
+    def __init__(self, conv_state: torch.Tensor, index: int = 0):
+        # conv_state: (batch, hidden_size, kernel_size)
+        self.conv_state = conv_state
+        self.index = int(index)
+        self.kernel_size = conv_state.size(-1)
+
+    @staticmethod
+    def alloc(
+        batch_size: int,
+        hidden_size: int,
+        kernel_size: int = 5,
+        device: Any = None,
+        dtype: Any = None
+    ):
+        return SLCInferenceCache(
+            conv_state=torch.zeros(
+                batch_size,
+                hidden_size,
+                kernel_size,
+                device=device,
+                dtype=dtype
+            ), index=0
+        )
+
+    def clear_(self):
+        self.conv_state.zero_()
+        self.index = 0
+
+
+# SLC2 implementation
+# Copyright 2025 Rikka Botan. All rights reserved
+class SLC2(nn.Module):
+    def __init__(
+        self,
+        config
+    ):
+        """
+        ## Substitution Liquid Convolution Module
+
+        inspired by LFM2.LFM2ConvBlock
+        ```
+        Formulation:
+
+        x ∈ ℝ^{B×S×E}
+        y ∈ ℝ^{B×S×E}
+
+        y = B ⋅ ∏ᵢ₌ⱼ⁽ʲ⁺ᵏ⁾ Aᵢ ⋅ xᵢ
+
+        ----------------------------------------
+        Algorithm: SLC2
+        ----------------------------------------
+        Input: x: (B, S, E)
+        Output: y: (B, S, E)
+            1: A, B, x₁: (B, S, E) <- Linear(x)
+            2: x₂: (B, S, E) <- Convolution1D(E, E)(SiLU(A)*x₁)
+            3: x₃: (B, S, E) <- B*SiLU(x₂)
+            4: y: (B, S, E) <- Linear(x₃)
+            5: return y
+        ----------------------------------------
+        ```
+        """
+        super().__init__()
+        self.n_embed = config.n_embd
+        self.n_head = config.n_head
+        self.d_head = config.n_embd//config.n_head
+        self.n_kernel = config.n_kernel
+        self.x_proj = nn.Linear(
+            in_features=self.n_embed,
+            out_features=self.n_embed,
+            bias=False
+        )
+        self.alpha_proj = nn.Linear(
+            in_features=self.n_embed,
+            out_features=self.n_head,
+            bias=False
+        )
+        self.A_proj = nn.Linear(
+            in_features=self.n_embed,
+            out_features=self.d_head,
+            bias=False
+        )
+        self.B_proj = nn.Linear(
+            in_features=self.n_embed,
+            out_features=self.n_embed,
+            bias=False
+        )
+        self.conv1d = nn.Conv1d(
+            in_channels=self.n_embed,
+            out_channels=self.n_embed,
+            kernel_size=self.n_kernel,
+            stride=1,
+            padding=self.n_kernel-1,
+            dilation=1,
+            groups=self.n_embed,
+            bias=False,
+            padding_mode="zeros"
+        )
+        self.c_proj = nn.Linear(
+            in_features=self.n_embed,
+            out_features=self.n_embed,
+            bias=False
+        )
+
+        self.cache: Optional[SLCInferenceCache] = None
+    
+    def alloc_cache(
+        self,
+        batch_size: int,
+        device: Optional[torch.device] = None,
+        dtype: Optional[torch.dtype] = None
+    ):
+        self.cache = SLCInferenceCache.alloc(
+            batch_size,
+            self.n_embed,
+            self.n_kernel,
+            device=device,
+            dtype=dtype
+        )
+        self.cache.conv_state = self.cache.conv_state.contiguous()
+
+    def clear_cache(
+        self
+    ):
+        if self.cache is not None:
+            self.cache.clear_()
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        use_cache: bool = False
+    ) -> torch.Tensor:
+        bsz, seql, _ = hidden_states.size()
+        if seql > 1 or not use_cache:
+            x = self.x_proj(hidden_states)
+            alpha = self.alpha_proj(hidden_states)
+            A = self.A_proj(hidden_states)
+            B = self.B_proj(hidden_states)
+            A = A.unsqueeze(-2) * F.silu(alpha).unsqueeze(-1)
+            xA = self.conv1d(
+            (F.silu(A.reshape(bsz, seql, -1)) * x ).transpose(1, 2)).transpose(1, 2)
+            xA = F.silu(xA[:, :seql])
+            xAB = B * xA
+            y = self.c_proj(xAB)
+            return y
+
+        if self.cache is None or self.cache.conv_state.size(0) != bsz:
+            self.alloc_cache(
+                bsz,
+                device=hidden_states.device,
+                dtype=hidden_states.dtype
+            )
+
+        hidden_states, prefix = hidden_states[:, -1], hidden_states[:, :-1]
+        y_t = self.step(hidden_states, self.cache)
+        y = torch.cat([prefix, y_t.unsqueeze(1)], dim=1)
+        return y
+
+    def step(
+        self,
+        hidden_states: torch.Tensor,
+        cache: SLCInferenceCache
+    ) -> torch.Tensor:
+        assert hidden_states.dim() == 3 and hidden_states.size(1) == 1
+        bsz = hidden_states.size(0)
+        x = self.x_proj(hidden_states)
+        alpha = self.alpha_proj(hidden_states)
+        A = self.A_proj(hidden_states)
+        B = self.B_proj(hidden_states)
+        A = A.unsqueeze(-2) * F.silu(alpha).unsqueeze(-1)
+        xA = F.silu(A.reshape(bsz, 1, -1)) * x
+        cache.conv_state.copy_(
+            torch.roll(cache.conv_state, shifts=-1, dims=-1))
+        cache.conv_state[:, :, -1] = xA.squeeze(1)
+        xA = torch.sum(
+            cache.conv_state 
+            * rearrange(self.conv1d.weight, "d 1 w -> d w"), 
+            dim=-1
+        ) # (B D)
+        if self.conv1d.bias is not None:
+            xA = xA + self.conv1d.bias
+        xAB = B * F.silu(xA)
+        y_t = self.c_proj(xAB)
+
+        return y_t
+
+
 class MLP(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=False)
         self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd, bias=False)
 
-    def forward(self, x):
+    def forward(
+        self,
+        x: torch.Tensor,
+        use_cache: bool = False
+    ) -> torch.Tensor:
+        if use_cache:
+            x, prefix = x[:, -1], x[:, :-1]
         x = self.c_fc(x)
         x = F.relu(x).square()
         x = self.c_proj(x)
+        if use_cache:
+            x = torch.cat([prefix, x.unsqueeze(1)], dim=1)
         return x
 
 
 class Block(nn.Module):
     def __init__(self, config, layer_idx):
         super().__init__()
-        self.attn = CausalSelfAttention(config, layer_idx)
+        if layer_idx%config.slc_rate==1 or layer_idx==config.n_layer-1:
+            self.attn = CausalSelfAttention(config, layer_idx)
+            self.attn_mode = True
+        else:
+            self.attn = SLC2(config)
+            self.attn_mode = False
+            
         self.mlp = MLP(config)
 
-    def forward(self, x, cos_sin, kv_cache):
-        x = x + self.attn(norm(x), cos_sin, kv_cache)
+    def forward(self, x, cos_sin, kv_cache, use_cache=False):
+        if self.attn_mode:
+            x = x + self.attn(norm(x), cos_sin, kv_cache)
+        else:
+            x = x + self.attn(norm(x), use_cache)
         x = x + self.mlp(norm(x))
         return x
 
@@ -214,10 +434,20 @@ class GPT(nn.Module):
         model_dim = self.config.n_embd
         ddp, rank, local_rank, world_size = get_dist_info()
         # Separate out all parameters into 3 groups (matrix, embedding, lm_head)
-        matrix_params = list(self.transformer.h.parameters())
         embedding_params = list(self.transformer.wte.parameters())
+        matrix_params = []
+        matrix_1d_params = []
+        for p in self.transformer.h.parameters():
+            if not p.requires_grad:
+                continue
+            # Muon は 2D (ndim == 2) のみ期待するのでフィルタ
+            if p.ndim == 2:
+                matrix_params.append(p)
+            else:
+                matrix_1d_params.append(p)
+        # matrix_params = list(self.transformer.h.parameters())
         lm_head_params = list(self.lm_head.parameters())
-        assert len(list(self.parameters())) == len(matrix_params) + len(embedding_params) + len(lm_head_params)
+        assert len(list(self.parameters())) == len(matrix_params) + len(matrix_1d_params) + len(embedding_params) + len(lm_head_params)
         # Create the AdamW optimizer for the embedding and lm_head
         # Scale the LR for the AdamW parameters by ∝1/√dmodel (having tuned the LRs for 768 dim model)
         dmodel_lr_scale = (model_dim / 768) ** -0.5
@@ -226,6 +456,7 @@ class GPT(nn.Module):
         adam_groups = [
             dict(params=lm_head_params, lr=unembedding_lr * dmodel_lr_scale),
             dict(params=embedding_params, lr=embedding_lr * dmodel_lr_scale),
+            dict(params=matrix_1d_params, lr=matrix_lr * dmodel_lr_scale),
         ]
         adamw_kwargs = dict(betas=(0.8, 0.95), eps=1e-10, weight_decay=weight_decay)
         AdamWFactory = DistAdamW if ddp else partial(torch.optim.AdamW, fused=True)
@@ -241,7 +472,7 @@ class GPT(nn.Module):
                 group["initial_lr"] = group["lr"]
         return optimizers
 
-    def forward(self, idx, targets=None, kv_cache=None, loss_reduction='mean'):
+    def forward(self, idx, targets=None, kv_cache=None, loss_reduction='mean', use_cache=False):
         B, T = idx.size()
 
         # Grab the rotary embeddings for the current sequence length (they are of shape (1, seq_len, 1, head_dim))
@@ -256,7 +487,7 @@ class GPT(nn.Module):
         x = self.transformer.wte(idx)
         x = norm(x)
         for block in self.transformer.h:
-            x = block(x, cos_sin, kv_cache)
+            x = block(x, cos_sin, kv_cache, use_cache)
         x = norm(x)
 
         # Forward the lm_head (compute logits)
@@ -276,32 +507,63 @@ class GPT(nn.Module):
             return logits
 
     @torch.inference_mode()
-    def generate(self, tokens, max_tokens, temperature=1.0, top_k=None, seed=42):
-        """
-        Naive autoregressive streaming inference.
-        To make it super simple, let's assume:
-        - batch size is 1
-        - ids and the yielded tokens are simple Python lists and ints
-        """
-        assert isinstance(tokens, list)
-        device = self.get_device()
-        rng = None
-        if temperature > 0:
-            rng = torch.Generator(device=device)
-            rng.manual_seed(seed)
-        ids = torch.tensor([tokens], dtype=torch.long, device=device) # add batch dim
-        for _ in range(max_tokens):
-            logits = self.forward(ids) # (B, T, vocab_size)
-            logits = logits[:, -1, :] # (B, vocab_size)
-            if top_k is not None:
-                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                logits[logits < v[:, [-1]]] = -float('Inf')
-            if temperature > 0:
+    def generate(
+        self,
+        input_ids: torch.LongTensor = None,
+        use_cache: bool = True,
+        max_new_tokens: int = 512,
+        temperature: float = 0.2,
+        top_k: int = 20,
+        top_p: float = 0.95,
+        repetition_penalty: float = 1.15,
+        eos_token_id: int = 2
+    ):
+        generated = input_ids.clone().to(input_ids.device)
+        bsz = input_ids.size(0)
+        tokens = input_ids
+        prefix, tokens = input_ids[:, :-1], input_ids[:, -1:]
+        n_chunked = (prefix.shape[-1] // self.config.n_kernel) * self.config.n_kernel
+        if n_chunked > 0:
+            _ = self(prefix[:, :n_chunked])
+        else:
+            _ = self(prefix[:, 0].unsqueeze(1))
+
+        for i in range(n_chunked, prefix.shape[-1]):
+           _ = self(prefix[:, i : i + 1], use_cache=use_cache)
+
+        # Generate
+        for _ in range(max_new_tokens):
+            with torch.no_grad():
+                out = self(tokens, use_cache=use_cache)
+            logits = out[:, -1]
+            if repetition_penalty != 1.0:
+                for b in range(bsz):
+                    u = torch.unique(generated[b])
+                    token_logits = logits[b, u]
+                    lt_mask = token_logits < 0
+                    gt_mask = ~lt_mask
+                    if gt_mask.any():
+                        logits[b, u[gt_mask]] /= repetition_penalty
+                    if lt_mask.any():
+                        logits[b, u[lt_mask]] *= repetition_penalty
+            if temperature != 1.0:
                 logits = logits / temperature
-                probs = F.softmax(logits, dim=-1)
-                next_ids = torch.multinomial(probs, num_samples=1, generator=rng)
-            else:
-                next_ids = torch.argmax(logits, dim=-1, keepdim=True)
-            ids = torch.cat((ids, next_ids), dim=1)
+            if top_k > 0:
+                top_k = min(top_k, logits.size(-1))
+                threshold = torch.topk(logits, top_k, dim=-1).values[:, -1].unsqueeze(-1)
+                logits = logits.masked_fill(logits < threshold, -float("inf"))
+            if top_p < 1.0:
+                sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+                cum_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+                sorted_indices_to_remove = cum_probs > top_p
+                sorted_indices_to_remove[1:] = sorted_indices_to_remove[:-1].clone()
+                sorted_indices_to_remove[0] = False
+                indices_to_remove = sorted_indices[sorted_indices_to_remove]
+                logits[indices_to_remove] = -torch.inf
+            probs = F.softmax(logits, dim=-1)
+            next_ids = torch.multinomial(probs, num_samples=1)
+            tokens = torch.cat((tokens, next_ids), dim=1)
             token = next_ids.item()
+            if token == eos_token_id:
+                break
             yield token
