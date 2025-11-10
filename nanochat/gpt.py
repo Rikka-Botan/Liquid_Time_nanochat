@@ -520,7 +520,7 @@ class GPT(nn.Module):
         generated = input_ids.clone().to(input_ids.device)
         bsz = input_ids.size(0)
         tokens = input_ids
-        prefix, tokens = input_ids[:, :-1], input_ids[:, -1:]
+        prefix, tokens = input_ids[:, :-1], input_ids
         _ = self(prefix)
 
         # Generate
