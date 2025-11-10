@@ -51,7 +51,7 @@ The fastest way to feel the magic is to run the speedrun script [speedrun.sh](sp
 
 Fisrt, install this repository
 ```bash
-pip install git+https://github.com/Rikka-Botan/Liquid_Time_nanochat.git
+git clone https://github.com/Rikka-Botan/Liquid_Time_nanochat.git
 ```
 
 Then, run trainings.
