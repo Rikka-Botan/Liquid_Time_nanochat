@@ -289,7 +289,6 @@ class SLC2(nn.Module):
         hidden_states: torch.Tensor,
         cache: SLCInferenceCache
     ) -> torch.Tensor:
-        assert hidden_states.dim() == 3 and hidden_states.size(1) == 1
         bsz = hidden_states.size(0)
         x = self.x_proj(hidden_states)
         alpha = self.alpha_proj(hidden_states)
@@ -529,7 +528,7 @@ class GPT(nn.Module):
             _ = self(prefix[:, 0].unsqueeze(1))
 
         for i in range(n_chunked, prefix.shape[-1]):
-           _ = self(prefix[:, 0 : i + 1], use_cache=use_cache)
+           _ = self(prefix[:, i : i + 1], use_cache=use_cache)
 
         # Generate
         for _ in range(max_new_tokens):
