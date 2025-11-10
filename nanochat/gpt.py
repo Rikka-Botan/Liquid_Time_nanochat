@@ -521,14 +521,7 @@ class GPT(nn.Module):
         bsz = input_ids.size(0)
         tokens = input_ids
         prefix, tokens = input_ids[:, :-1], input_ids[:, -1:]
-        n_chunked = (prefix.shape[-1] // self.config.n_kernel) * self.config.n_kernel
-        if n_chunked > 0:
-            _ = self(prefix[:, :n_chunked])
-        else:
-            _ = self(prefix[:, 0].unsqueeze(1))
-
-        for i in range(n_chunked, prefix.shape[-1]):
-           _ = self(prefix[:, i : i + 1], use_cache=use_cache)
+        _ = self(prefix)
 
         # Generate
         for _ in range(max_new_tokens):
