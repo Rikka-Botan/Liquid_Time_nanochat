@@ -529,7 +529,7 @@ class GPT(nn.Module):
             _ = self(prefix[:, 0].unsqueeze(1))
 
         for i in range(n_chunked, prefix.shape[-1]):
-           _ = self(prefix[:, i : i + 1], use_cache=use_cache)
+           _ = self(prefix[:, 0 : i + 1], use_cache=use_cache)
 
         # Generate
         for _ in range(max_new_tokens):
