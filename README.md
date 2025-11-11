@@ -2,7 +2,7 @@
 
 ![Nanochat_saint_iberis](https://github.com/user-attachments/assets/2af52f08-6b04-41ff-8e74-1144e2ec7e9a)
 
-This repository employs a module called **SLC2**, inspired by **Liquid Time-Constant Networks (LTCs)** and **Liquid Functional Models (LFM2)**, to enable faster training and inference for **nanochat**.
+This repository employs a module called **SLC2**, inspired by **Liquid Time-Constant Networks (LTCs)** and **Liquid Foundation Models (LFM2)**, to enable faster training and inference for **nanochat**.
 The **SEA Model series Op.0: Saint Iberis** achieves comparable performance while reducing training time by more than **30 minutes** and lowering computational costs by over **$10**.
 You are free to use the model from this repository
 
