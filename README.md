@@ -20,7 +20,6 @@ SEA Model series Op.0: Saint Iberisは元のnanoGPTと比較して学習時間�
 | **Total parameters**  | 542,035,200 (542M)            | n_layer: 20, n_head: 10, n_kv_head: 10, n_embd: 1280  |
 | **Layers**            | 20 (13 slc2 + 7 attn)         | attn layers: 1, 4, 7, 10, 13, 16, 19                  |
 | **Vocabulary size**   | 65,536                        | -                                                     |
-| **Training budget**   | 100B tokens                   | Fineweb edu                                           |
 | **License**           | MIT                           | -                                                    |
 
 # 🌸 SLC2 Formulation
