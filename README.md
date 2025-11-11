@@ -56,10 +56,10 @@ git clone https://github.com/Rikka-Botan/Liquid_Time_nanochat.git
 
 Then, run trainings.
 ```bash
-%cd
-%cd nanochat
-%pwd
-!bash speedrun.sh
+cd
+cd Liquid_Time_nanochat
+pwd
+bash speedrun.sh
 ```
 
 Alternatively, since the script runs for 4 hours, I like to launch it like this inside a new screen session `speedrun` (and also log output to `speedrun.log`):
